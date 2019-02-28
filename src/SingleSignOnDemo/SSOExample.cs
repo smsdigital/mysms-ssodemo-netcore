@@ -79,7 +79,7 @@ namespace SingleSignOnDemo
                 // Nonce und verschlüsselten Text aneinanderreihen und in einen Base64-String umwandeln.
                 // Concatenate the nonce and the encrypted text and convert it to a base64 string.
                 // Concaténer le nonce et le texte chiffré et convertisser-le en chaîne base64.
-                byte[] payload = nonce.ToList().Concat(encrypted.ToList()).ToArray();
+                byte[] payload = nonce.Concat(encrypted).ToArray();
                 string base64 = Convert.ToBase64String(payload, Base64FormattingOptions.None);
 
                 // Eine HTTP-Anfrage an die Plattform senden.
@@ -88,38 +88,49 @@ namespace SingleSignOnDemo
                 string sso_url = string.Format("{0}/auth/lookup/{1}", SSO_BASE_URL, token);
                 HttpWebRequest req = WebRequest.CreateHttp(sso_url);
                 req.Headers.Add("Authorization", string.Format("PRODUCTAUTH {0}:{1}", PRODUCT_NAME, base64));
-                req.Method = "GET";
 
                 // Die Antwort empfangen und verarbeiten
                 // Receive and proceed the response.
                 // Recever et passer la réponse.
                 HttpWebResponse resp = (HttpWebResponse)req.GetResponse();
-                if (resp.StatusCode == HttpStatusCode.OK)
-                {
-                    using (MemoryStream ms = new MemoryStream())
-                    {
-                        resp.GetResponseStream().CopyTo(ms);
-                        try
-                        {
-                            // Die Antwort enthält die 24 Byte lange Nonce und die verschlüsselten Benutzerdaten.
-                            // The response contains the nonce with a size of 24 bytes and the encrypted user data.
-                            // La réponse contient la nonce avec un longueur de 24 octets et les données d'utilisateur cryptées.
-                            byte[] encr_nonce = ms.ToArray().Take(24).ToArray();
-                            byte[] encr_data = ms.ToArray().Skip(24).ToArray();
-                            byte[] decrypted = PublicKeyBox.Open(encr_data, encr_nonce, Convert.FromBase64String(APPLICATION_PRIVATE_KEY), Convert.FromBase64String(PLATFORM_PUBLIC_KEY));
-                        }
-                        catch (CryptographicException ex)
-                        {
-                            Console.WriteLine(ex.Message);
-                            return false;
-                        }
-                    }
+                if (!(resp.StatusCode == HttpStatusCode.OK))
+                    return false;
 
-                    return true;
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    resp.GetResponseStream().CopyTo(ms);
+                    resp.Close();
+
+                    // Die Antwort enthält die 24 Byte lange Nonce und die verschlüsselten Benutzerdaten.
+                    // The response contains the nonce with a size of 24 bytes and the encrypted user data.
+                    // La réponse contient la nonce avec un longueur de 24 octets et les données d'utilisateur cryptées.
+                    byte[] encr_nonce = ms.ToArray().Take(24).ToArray();
+                    byte[] encr_data = ms.ToArray().Skip(24).ToArray();
+                    byte[] decrypted = PublicKeyBox.Open(encr_data, encr_nonce, Convert.FromBase64String(APPLICATION_PRIVATE_KEY), Convert.FromBase64String(PLATFORM_PUBLIC_KEY));
                 }
+
+                return true;
+            }
+            // Fängt WebException-Objekte auf, die auftreten, wenn die HTTP-Anfrage ungültig ist oder nicht verarbeitet werden kann.
+            // Catches WebException objects thrown if the HTTP request is invalid or cannot be proceeded.
+            // Attrape les objets WebException levés si la demande HTTP n'est pas valide ou ne peut pas être poursuivie.
+            catch (WebException ex)
+            {
+                Console.WriteLine("Error communicating with mySMS: " + ex.Message);
                 return false;
             }
-            catch (WebException ex)
+            // Fängt CryptographicException-Objekte auf, die auftreten, wenn die Ver- oder Entschlüsselung fehlschlägt.
+            // Catches CryptographicException objects thrown if the encryption or decryption fails.
+            // Attrape les objets CryptographicException levés si le chiffrement ou le déchiffrement échoue.
+            catch (CryptographicException ex)
+            {
+                Console.WriteLine("Error encrypting or decrypting data: " + ex.Message);
+                return false;
+            }
+            // Fängt alle anderen Exception-Objekte auf, die nicht von einem der oberen beiden Typen sind.
+            // Catches any other Exception that is not of one of the above types.
+            // Attrape toute autre exception qui n'est pas de l'un des types ci-dessus.
+            catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
                 return false;
